@@ -8,6 +8,7 @@ using Microsoft.SqlServer.TransactSql.ScriptDom;
 using MySql.Data.MySqlClient;
 using System.Data;
 using System.Data.SqlClient;
+using System.Text;
 
 namespace DC_Core.Context.Context
 {
@@ -137,12 +138,37 @@ namespace DC_Core.Context.Context
         /// <returns>Modified query</returns>
         private string ModifyQueryIfMatched(string query, IQueryModifier queryModifier)
         {
-            var isQueryTypeMatch = IsQueryTypeMatch(query, queryModifier.QueryModifierType);
+            var isQueryTypeMatch = IsThereMatchQueryStatement(query, queryModifier.QueryModifierType);
 
             if (isQueryTypeMatch)
-                return queryModifier.ModifyQuery(query);
+                return ModifyQuery(query, queryModifier);
 
             return query;
+        }
+
+        /// <summary>
+        /// Modify query and apply specified modification in query modifier on matched query statements and return new query
+        /// </summary>
+        /// <param name="query">Base query</param>
+        /// <param name="queryModifier">Query modifier</param>
+        /// <returns>Modified query</returns>
+        private string ModifyQuery(string query, IQueryModifier queryModifier)
+        {
+            var chunkedQueries = new StringBuilder();
+
+            var queryStatements = query.GetQueryStatements() ?? Enumerable.Empty<TSqlStatement>();
+
+            foreach (var queryStatement in queryStatements)
+            {
+                var chunkedQuery = query.Substring(queryStatement.StartOffset, queryStatement.FragmentLength);
+
+                if (queryStatement.IsQueryStatementMatchedByModifier(queryModifier.QueryModifierType))
+                    chunkedQueries.AppendLine(queryModifier.ModifyQuery(chunkedQuery));
+                else
+                    chunkedQueries.AppendLine(chunkedQuery);
+            }
+
+            return chunkedQueries.ToString();
         }
 
         /// <summary>
@@ -152,7 +178,7 @@ namespace DC_Core.Context.Context
         /// <param name="queryModifierType">Query modifier type</param>
         /// <returns>Matching of query statements with query modifier type</returns>
         /// <exception cref="Exception">If query modifier is invalid, the method throw exception.</exception>
-        protected bool IsQueryTypeMatch(string query, QueryModifierTypes queryModifierType)
+        private bool IsThereMatchQueryStatement(string query, QueryModifierTypes queryModifierType)
         {
             var queryStatements = query.GetQueryStatements() ?? Enumerable.Empty<TSqlStatement>();
 
